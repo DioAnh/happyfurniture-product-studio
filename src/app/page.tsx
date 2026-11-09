@@ -44,7 +44,10 @@ export default function ProductStudio() {
   }
 
   async function startVariants() {
-    if (!jobId) return;
+    if (!jobId) {
+      setMessage('Chưa có product job. Hãy điền brief rồi bấm “Tạo master preview” trước.');
+      return;
+    }
     setBusy(true); setMessage('Đang đưa bộ biến thể vào hàng đợi…');
     const response = await fetch(`/api/jobs/${jobId}`, { method: 'POST' });
     const data = await response.json();
@@ -87,7 +90,7 @@ export default function ProductStudio() {
           </section>
           <aside className="side-stack">
             <div className="card readiness"><h3>Publish readiness</h3><div className="readiness-item"><span>Product brief</span><span className={`status ${name && description ? 'ok' : 'pending'}`}>{name && description ? 'ready' : 'waiting'}</span></div><div className="readiness-item"><span>Geometry masters</span><span className="status pending">after approval</span></div><div className="readiness-item"><span>Variant renders</span><span className="status">{variantCount} queued</span></div><div className="readiness-item"><span>Image contract</span><span className="status">2048 / WebP / &lt;100kB</span></div><div className="readiness-item"><span>Supabase publish</span><span className="status pending">schema adapter</span></div></div>
-            <div className="card readiness"><p className="section-label">Current job</p><div className="job-count">{jobId ? '01' : '—'}</div><p className="muted">{jobId ? `Job ${jobId} đã tạo. Duyệt master preview trước khi chạy toàn bộ biến thể.` : 'Chưa có job trong phiên này.'}</p><button className="btn" style={{ width: '100%', marginTop: 12 }} disabled={!jobId || busy} onClick={startVariants}>Bắt đầu render variants</button></div>
+              <div className="card readiness"><p className="section-label">Current job</p><div className="job-count">{jobId ? '01' : '—'}</div><p className="muted">{jobId ? `Job ${jobId} đã tạo. Duyệt master preview trước khi chạy toàn bộ biến thể.` : 'Chưa có job trong phiên này. Hãy tạo master preview trước.'}</p><button className="btn" style={{ width: '100%', marginTop: 12 }} disabled={busy} onClick={startVariants}>Bắt đầu render variants</button></div>
             <div className="note"><strong>Geometry lock</strong><br />Một master được duyệt cho từng size. Các mã màu không được tự ý thay đổi tỷ lệ, tay nắm, góc máy, bóng đổ hoặc tương phản mặt trên / mặt trước / mặt bên.</div>
           </aside>
         </div>
