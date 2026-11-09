@@ -12,9 +12,13 @@ export default function ProductStudio() {
   const [sizes, setSizes] = useState<ProductSize[]>(initialSizes);
   const [materials, setMaterials] = useState(DEFAULT_MATERIALS);
   const [priceFormula, setPriceFormula] = useState('2.950.000 × ngang (mét)');
+  const [baseSku, setBaseSku] = useState('LS-MOD-NEW');
+  const [typeCode, setTypeCode] = useState('LS');
+  const [designCode, setDesignCode] = useState('MOD');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [jobId, setJobId] = useState('');
+  const [renderedCount, setRenderedCount] = useState(0);
 
   const variantCount = useMemo(() => sizes.length * materials.length, [sizes.length, materials.length]);
 
@@ -40,7 +44,7 @@ export default function ProductStudio() {
     const data = await response.json();
     setBusy(false);
     if (!response.ok) { setMessage((data.errors ?? [data.error]).join(' ')); return; }
-    setJobId(data.job.id); setMessage(`Đã tạo ${data.job.id}. Master preview sẽ được tạo theo từng size.`);
+    setJobId(data.job.id); setRenderedCount(0); setMessage(`Đã tạo ${data.job.id}. Bấm “Bắt đầu render variants” để tạo và upload toàn bộ ${data.job.variantCount} ảnh.`);
   }
 
   async function startVariants() {
@@ -48,10 +52,32 @@ export default function ProductStudio() {
       setMessage('Chưa có product job. Hãy điền brief rồi bấm “Tạo master preview” trước.');
       return;
     }
-    setBusy(true); setMessage('Đang đưa bộ biến thể vào hàng đợi…');
-    const response = await fetch(`/api/jobs/${jobId}`, { method: 'POST' });
-    const data = await response.json();
-    setBusy(false); setMessage(data.job?.message ?? data.error ?? 'Đã cập nhật job.');
+    setBusy(true); setRenderedCount(0); setMessage(`Đang render 0/${variantCount} biến thể…`);
+    const imageUrls: Record<string, string> = {};
+    let completed = 0;
+    try {
+      for (const size of sizes) {
+        for (const materialCode of materials) {
+          const response = await fetch('/api/render', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description, notes, sizes, materials, priceFormula, sizeName: size.name, materialCode, baseSku }) });
+          const data = await response.json();
+          if (!response.ok || !data.asset?.publicUrl) throw new Error(`${size.name}/${materialCode}: ${data.error ?? 'Không nhận được ảnh đã upload.'}`);
+          const sizeCode = size.name.trim().toUpperCase().replace(/\s+/g, '-');
+          imageUrls[`${sizeCode}/${materialCode}`] = data.asset.publicUrl;
+          completed += 1;
+          setRenderedCount(completed);
+          setMessage(`Đã render ${completed}/${variantCount}: ${size.name} / ${materialCode}`);
+        }
+      }
+      setMessage(`Đã upload đủ ${completed} ảnh. Đang publish product family lên website…`);
+      const publishResponse = await fetch('/api/publish', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description, notes, sizes, materials, priceFormula, baseSku, typeCode, designCode, rooms: ['Phòng khách'], imageUrls }) });
+      const publication = await publishResponse.json();
+      if (!publishResponse.ok) throw new Error(publication.error ?? 'Publish thất bại.');
+      setMessage(publication.liveEnabled ? `Hoàn tất: ${completed} ảnh đã upload và product family đã lên website.` : `Đã upload ${completed} ảnh. Payload publish đang ở dry-run; bật HAPPY_FURNITURE_ALLOW_LIVE_PUBLISH=true trên Vercel để ghi sản phẩm live.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Render variants thất bại.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -72,6 +98,9 @@ export default function ProductStudio() {
                 <div className="field full"><label>Tên sản phẩm</label><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Ví dụ: Tủ trang trí phòng khách hiện đại" /></div>
                 <div className="field full"><label>Mô tả hình dáng & công năng</label><textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Mô tả số cánh, hộc kéo, tay nắm, phong cách, công năng…" /></div>
                 <div className="field full"><label>Ghi chú geometry</label><textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Ví dụ: mặt trên sáng nhất, mặt trước trung gian, mặt bên tối hơn; tay nắm kim loại giữ nguyên giữa mọi mã." /></div>
+                <div className="field"><label>Base SKU</label><input value={baseSku} onChange={(event) => setBaseSku(event.target.value.toUpperCase())} /></div>
+                <div className="field"><label>Type code</label><input value={typeCode} onChange={(event) => setTypeCode(event.target.value.toUpperCase())} /></div>
+                <div className="field"><label>Design code</label><input value={designCode} onChange={(event) => setDesignCode(event.target.value.toUpperCase())} /></div>
               </div>
               <div className="divider" />
               <p className="section-label">Kích thước theo size / mm</p>
@@ -90,7 +119,7 @@ export default function ProductStudio() {
           </section>
           <aside className="side-stack">
             <div className="card readiness"><h3>Publish readiness</h3><div className="readiness-item"><span>Product brief</span><span className={`status ${name && description ? 'ok' : 'pending'}`}>{name && description ? 'ready' : 'waiting'}</span></div><div className="readiness-item"><span>Geometry masters</span><span className="status pending">after approval</span></div><div className="readiness-item"><span>Variant renders</span><span className="status">{variantCount} queued</span></div><div className="readiness-item"><span>Image contract</span><span className="status">2048 / WebP / &lt;100kB</span></div><div className="readiness-item"><span>Supabase publish</span><span className="status pending">schema adapter</span></div></div>
-              <div className="card readiness"><p className="section-label">Current job</p><div className="job-count">{jobId ? '01' : '—'}</div><p className="muted">{jobId ? `Job ${jobId} đã tạo. Duyệt master preview trước khi chạy toàn bộ biến thể.` : 'Chưa có job trong phiên này. Hãy tạo master preview trước.'}</p><button className="btn" style={{ width: '100%', marginTop: 12 }} disabled={busy} onClick={startVariants}>Bắt đầu render variants</button></div>
+              <div className="card readiness"><p className="section-label">Current job</p><div className="job-count">{jobId ? `${renderedCount}/${variantCount}` : '—'}</div><p className="muted">{jobId ? `Job ${jobId}. Mỗi biến thể sẽ được tạo ảnh, kiểm tra, upload Supabase rồi publish sau cùng.` : 'Chưa có job trong phiên này. Hãy tạo master preview trước.'}</p><button className="btn" style={{ width: '100%', marginTop: 12 }} disabled={busy} onClick={startVariants}>{busy ? `Đang render ${renderedCount}/${variantCount}…` : 'Bắt đầu render variants'}</button></div>
             <div className="note"><strong>Geometry lock</strong><br />Một master được duyệt cho từng size. Các mã màu không được tự ý thay đổi tỷ lệ, tay nắm, góc máy, bóng đổ hoặc tương phản mặt trên / mặt trước / mặt bên.</div>
           </aside>
         </div>
